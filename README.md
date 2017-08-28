@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from PIL import Image
 from sklearn.utils import shuffle
+from sklearn.metrics import confusion_matrix
 import numpy as np
 import cv2
 import math
@@ -509,7 +510,7 @@ I performed the following data preprocessing steps:
  * Trying to get the model to perform with an accuracy rate over 93% is quite tricky because they are so many paremeters that can be tuned and twicked. There are multiple approaches my first step for the machine learning pipeline was to run the model first and then pre-process the data.
  
  
-* Image Augmentation was not necessary since my test accurracy was quite high Train acc.: 0.9999, Validation acc.: 0.9616 Test acc.: 0.9478
+* Image Augmentation details are explained the "How I did Data Augmentation" section
 
 
 * Standardize the pixel values: `new_value = (old_value - 128) / 128`
@@ -657,6 +658,242 @@ def calculate_accuracy(data_gen, data_size, batch_size, accuracy, x, y, keep_pro
     return acc
 ```
 
+### How I did Data Augmentation
+
+1. Defined few image transformation methods (rotation, shift, shear, blurr , change gamma).
+2. Defined a method `random_transform()` to randomly apply multiple transformation on one image.
+
+Since the traffic sign samples is not distrubted equally, this could affect the CNN's performance. The network would be biased toward classes with more samples. **Data Augmentation** generates additional data on each traffic sign. For example, if the average sample for each classes is 1000 images. Any class has less than 300 images need to generate more data. 
+
+Data Augmentation includes but not limited to *blurring, rotating, shearing, translating, changing brighness* on original images.
+For image transformation, I found this documentation from [OpenCV](http://docs.opencv.org/trunk/da/d6e/tutorial_py_geometric_transformations.html) is helpful: 
+
+
+```python
+def translate(img):
+    "Shift orginal image around within image size"
+    x = img.shape[0]
+    y = img.shape[1]
+    x_shift = np.random.uniform(-0.3 * x, 0.3 * x)
+    y_shift = np.random.uniform(-0.3 * y, 0.3 * y)
+    shift_matrix = np.float32([[1, 0, x_shift], [0, 1, y_shift]])
+    shift_img = cv2.warpAffine(img, shift_matrix, (x, y))
+    return shift_img
+
+def rotate(img):
+    " Rotate original image at random rotation angle from -90 degree to +90 degree"
+    row, col, channel = img.shape
+    angle = np.random.uniform(-90, 90)
+    rotation_point = (row / 2, col / 2)
+    rotation_matrix = cv2.getRotationMatrix2D(rotation_point, angle, 1)
+    rotated_img = cv2.warpAffine(img, rotation_matrix, (col, row))
+    return rotated_img
+
+def shear(img):
+    " Affirm Transformation orignal image"
+    x, y, channel = img.shape
+    shear = np.random.randint(5,15)
+    pts1 = np.array([[5, 5], [20, 5], [5, 20]]).astype('float32')
+    pt1 = 5 + shear * np.random.uniform() - shear / 2
+    pt2 = 20 + shear * np.random.uniform() - shear / 2
+    pts2 = np.float32([[pt1, 5], [pt2, pt1], [5, pt2]])
+    M = cv2.getAffineTransform(pts1, pts2)
+    result = cv2.warpAffine(img, M, (y, x))
+    return result
+
+def blur(img):
+    r_int = np.random.randint(0, 2)
+    odd_size = 2 * r_int + 1
+    return cv2.GaussianBlur(img, (odd_size, odd_size), 0)
+
+
+def gamma(img):
+    gamma = np.random.uniform(0.2, 1.5)
+    invGamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+    new_img = cv2.LUT(img, table)
+    return new_img
+
+def random_transform(img):
+    # There are total of 6 transformation
+    # I will create an boolean array of 6 elements [ 0 or 1]
+    a = np.random.randint(0, 2, [1, 5]).astype('bool')[0]
+    if a[0] == 1: img = translate(img)
+    if a[1] == 1: img = rotate(img)
+    if a[2] == 1: img = shear(img)
+    if a[3] == 1: img = blur(img)
+    if a[4] == 1: img = gamma(img)
+        
+    return img
+```
+
+## Generate and Augment Images
+I generate 5 images per transformation on a random image of training set.
+
+
+```python
+i = 22700
+sample_1 = X_train[i]
+translated_img = []
+rotated_img = []
+shear_img = []
+blur_img = []
+noise_img = []
+gamma_img=[]
+for i in range(5):
+    translated_img.append(translate(sample_1)),rotated_img.append(rotate(sample_1))
+    shear_img.append(shear(sample_1)), blur_img.append(blur(sample_1)), gamma_img.append(gamma(sample_1))
+    
+row, col = 5, 5
+plt.figure(2)
+plt.subplot(row, col,1), plt.title('Shift'), plt.subplot(row, col,2), plt.title('Rotation')
+plt.subplot(row, col,3), plt.title('Shear'), plt.subplot(row, col,4), plt.title('Blur')
+plt.subplot(row, col,5), plt.title('Gamma')
+
+for i in range(5):
+    pos = 5*i
+    plt.subplot(row, col,pos+1), plt.imshow(translated_img[i]),  plt.axis('off')
+    plt.subplot(row, col,pos+2), plt.imshow(rotated_img[i]), plt.axis('off') 
+    plt.subplot(row, col,pos+3), plt.imshow(shear_img[i]), plt.axis('off')
+    plt.subplot(row, col,pos+4), plt.imshow(blur_img[i]), plt.axis('off')  
+    plt.subplot(row, col,pos+5), plt.imshow(gamma_img[i]), plt.axis('off')
+```
+
+
+![png](output_34_0.png)
+
+
+### Test the multiple transformations on one image
+
+
+```python
+for j in range(5):
+    pos=5*j
+    for i in range(8):
+        test = random_transform(sample_1)
+        plt.subplot(5, 7, pos+i+1), plt.imshow(test), plt.axis('off')
+```
+
+
+![png](output_36_0.png)
+
+
+### Generate New Dataset using Image Transformation.
+
+We have a way to generate additional data now. However, each class in dataset should have different needed amount of additional data.
+
+
+```python
+# Based on that average, we can estimate how many images a traffic sign need to have
+total_traffic_signs = len(set(y_train))
+# Calculate how many images in one traffic sign
+ts, imgs_per_sign = np.unique(y_train, return_counts=True)
+avg_per_sign = np.ceil(np.mean(imgs_per_sign)).astype('uint32')
+
+separated_data = []
+for traffic_sign in range(total_traffic_signs):
+    images_in_this_sign = X_train[y_train == traffic_sign,...]
+    separated_data.append(images_in_this_sign)
+```
+
+
+```python
+# For each dataset, I generate new images randomly based on current total images       
+expanded_data = np.array(np.zeros((1, 32,32,3)))
+expanded_labels = np.array([0])
+
+for sign, sign_images in enumerate(separated_data):
+    scale_factor = (4*(avg_per_sign/imgs_per_sign[sign])).astype('uint32')
+    new_images = []
+    # Generate new images  <---- Could apply list comprehension here
+    for img in sign_images:
+        for _ in range(scale_factor):
+            new_images.append(random_transform(img))
+    # Add old images and new images into 1 array    
+    if len(new_images) > 0:
+        sign_images = np.concatenate((sign_images, new_images),axis=0)
+    new_labels = np.full(len(sign_images),sign, dtype ='uint8')
+    # Insert new_images to current dataset
+    expanded_data = np.concatenate((expanded_data,sign_images), axis = 0)
+    expanded_labels = np.concatenate((expanded_labels, new_labels), axis=0)
+    augmented_train = {'features': expanded_data, 'labels': expanded_labels}
+```
+
+
+```python
+augmented_X_train, augmented_y_train = augmented_train['features'], augmented_train['labels']
+```
+
+### Compare results Before and After Data Augmentation
+
+
+```python
+# Create a barchart of frequencies
+item, count = np.unique(y_train, return_counts=True)
+freq = np.array((item, count)).T
+item2, count2 = np.unique(augmented_y_train, return_counts=True)
+freq2 = np.array((item2, count2)).T
+
+plt.figure(figsize=(15, 5))
+before = plt.subplot(1,2, 1)
+after = plt.subplot(1,2,2)
+before.bar(item, count, alpha=0.4), after.bar(item2, count2, alpha=0.8)
+before.set_title("Before: Unequally distributed data", size=12)
+after.set_title("After: Equally distributed data", size=12)
+```
+
+
+
+
+    <matplotlib.text.Text at 0x7f071f9e7a58>
+
+
+
+
+![png](output_42_1.png)
+
+
+### Do a Data Summary for the Augment Data
+
+
+```python
+### To start off let's do a basic data summary.
+
+# Number of training examples
+n_train = augmented_X_train.shape[0]
+
+# Number of validation examples
+n_validation = X_valid.shape[0]
+
+# Number of testing examples
+n_test = X_test.shape[0]
+
+# What's the shape of an image?
+image_shape = augmented_X_train[0].shape
+
+# How many classes are in the dataset
+n_classes = np.unique(augmented_y_train).shape[0]
+
+print("Number of training examples =", n_train)
+print("Number of validation examples =", n_validation)
+print("Number of testing examples =", n_test)
+print("Image data shape =", image_shape)
+print("Number of classes =", n_classes)
+```
+
+    Number of training examples = 155275
+    Number of validation examples = 4410
+    Number of testing examples = 12630
+    Image data shape = (32, 32, 3)
+    Number of classes = 43
+
+
+
+```python
+X_train = augmented_X_train
+y_train = augmented_y_train 
+```
+
 ### Pre-processing image data for model input
 is quite important that the data is shuffled to remove the influence of drifts within the data.
 I have managed to get quite a good validation accuracy without augmenting the data to create a much larger data set. 
@@ -699,6 +936,9 @@ In summary, my neural network architecture consists of the following 12 layers:
 * Fully Connected Layer 2 with 1024 hidden units
 * Dropout Layer to prevent overfittiing
 * Fully-connected with 43 units, corresponding to the 43 target classes
+
+![Model Architecture](CNNArchitecture.jpg)
+
 
 I used dropout on the fully-connected layers to prevent overfitting.
 
@@ -834,9 +1074,11 @@ def train_network():
         for epoch in range(NUM_EPOCH):
             # Instantiate generator for training data
             train_gen = next_batch(X_train, y_train, BATCH_SIZE, True)
-
+            #train_gen = next_batch(augmented_X_train, augmented_y_train, BATCH_SIZE, True)
+            #augmented_X_train, augmented_y_train
             # How many batches to run per epoch
             num_batches_train = math.ceil(X_train.shape[0] / BATCH_SIZE)
+            #num_batches_train = math.ceil(augmented_X_train.shape[0] / BATCH_SIZE)
 
             # Run training on each batch
             for _ in range(num_batches_train):
@@ -896,20 +1138,20 @@ accuracy_history = train_network()
 ```
 
     Training model Convolutional Neural Network
-    Epoch 1 -- Train acc.: 0.4439, Validation acc.: 0.3531, Elapsed time: 5.48 sec
-    Epoch 10 -- Train acc.: 0.9781, Validation acc.: 0.9073, Elapsed time: 41.07 sec
-    Epoch 20 -- Train acc.: 0.9971, Validation acc.: 0.9426, Elapsed time: 45.72 sec
-    Epoch 30 -- Train acc.: 0.9994, Validation acc.: 0.9526, Elapsed time: 45.74 sec
-    Epoch 40 -- Train acc.: 0.9997, Validation acc.: 0.9630, Elapsed time: 45.78 sec
-    Epoch 50 -- Train acc.: 0.9999, Validation acc.: 0.9608, Elapsed time: 45.66 sec
-    Epoch 60 -- Train acc.: 0.9999, Validation acc.: 0.9630, Elapsed time: 45.76 sec
-    Epoch 70 -- Train acc.: 0.9999, Validation acc.: 0.9639, Elapsed time: 45.75 sec
-    Epoch 80 -- Train acc.: 0.9999, Validation acc.: 0.9651, Elapsed time: 45.70 sec
-    Epoch 90 -- Train acc.: 0.9999, Validation acc.: 0.9646, Elapsed time: 45.77 sec
-    Epoch 100 -- Train acc.: 1.0000, Validation acc.: 0.9667, Elapsed time: 45.67 sec
-    Total elapsed time: 458.11 sec (7.64 min)
+    Epoch 1 -- Train acc.: 0.2485, Validation acc.: 0.2517, Elapsed time: 21.39 sec
+    Epoch 10 -- Train acc.: 0.7888, Validation acc.: 0.8576, Elapsed time: 179.58 sec
+    Epoch 20 -- Train acc.: 0.8876, Validation acc.: 0.9070, Elapsed time: 200.23 sec
+    Epoch 30 -- Train acc.: 0.9048, Validation acc.: 0.9059, Elapsed time: 199.83 sec
+    Epoch 40 -- Train acc.: 0.9146, Validation acc.: 0.9084, Elapsed time: 199.67 sec
+    Epoch 50 -- Train acc.: 0.9179, Validation acc.: 0.9175, Elapsed time: 199.71 sec
+    Epoch 60 -- Train acc.: 0.9439, Validation acc.: 0.9222, Elapsed time: 199.57 sec
+    Epoch 70 -- Train acc.: 0.9633, Validation acc.: 0.9395, Elapsed time: 199.76 sec
+    Epoch 80 -- Train acc.: 0.9639, Validation acc.: 0.9381, Elapsed time: 199.89 sec
+    Epoch 90 -- Train acc.: 0.9668, Validation acc.: 0.9372, Elapsed time: 199.95 sec
+    Epoch 100 -- Train acc.: 0.9734, Validation acc.: 0.9422, Elapsed time: 199.73 sec
+    Total elapsed time: 1999.33 sec (33.32 min)
     Calculating test accuracy...
-    Test acc.: 0.9570
+    Test acc.: 0.9233
     Trained model saved at: model.ckpt
     Accuracy history saved at accuracy_history.p
 
@@ -929,7 +1171,7 @@ plt.show()
 ```
 
 
-![png](output_39_0.png)
+![png](output_54_0.png)
 
 
 
@@ -970,8 +1212,11 @@ plt.show()
 ```
 
 
-![png](output_43_0.png)
+![png](output_58_0.png)
 
+
+Even though my samples images have a bright resolution and high quality images. The quality of the images used for training, validation and testing are quite poor. Image quality has a effect on convolutional neural network model accuracy. According to this paper. Higher image quality will produce better prediction accuracy results.[Understanding How Image Quality Affects Deep Neural Networks](https://arxiv.org/pdf/1604.04004.pdf).    
+I could improve the predictions of the new image sample results by augmenting the validation iamge set.
 
 ### Predict the Sign Type for Each Image
 
@@ -1026,13 +1271,13 @@ for i in range(images.shape[0]):
 
     Predictions on sample images
     
-    sample_images/children.jpg --> Beware of ice/snow
+    sample_images/children.jpg --> Children crossing
     
     sample_images/wild_animal_crossing.jpg --> Wild animals crossing
     
-    sample_images/loose_gravel.jpg --> Bumpy road
+    sample_images/loose_gravel.jpg --> Yield
     
-    sample_images/maximum_height_allowed.jpg --> No passing
+    sample_images/maximum_height_allowed.jpg --> Go straight or right
     
     sample_images/60_speedlimit.jpg --> Speed limit (60km/h)
     
@@ -1040,17 +1285,19 @@ for i in range(images.shape[0]):
 
 ### Predictions on sample images
 
-sample_images/children.jpg --> Beware of ice/snow -  **This is not correct** - comment: This does look similar to a beware of ice/snow which makes it difficult to classify
+Predictions on sample images
 
-sample_images/wild_animal_crossing.jpg --> Wild animals crossing **This is the correct predicition** - 
+sample_images/children.jpg --> Children crossing  **This is the correct predicition**
 
-sample_images/loose_gravel.jpg --> Bumpy road **This is the correct predicition** - 
+sample_images/wild_animal_crossing.jpg --> Wild animals crossing **This is the correct predicition**
 
-sample_images/maximum_height_allowed.jpg --> No passing  **This is not correct** - comment: This probably because the image was not part of the data sample
+sample_images/loose_gravel.jpg --> Yield **This is not the correct predicition**
 
-sample_images/60_speedlimit.jpg --> Speed limit (60km/h) **This is the correct predicition** 
+sample_images/maximum_height_allowed.jpg --> Go straight or right **This is not the correct predicition**
 
-Accuracy on the new sample images is **60%** this is because the poor quality of the images.
+sample_images/60_speedlimit.jpg --> Speed limit (60km/h) **This is the correct predicition**
+
+The accuracy rate of the prediction is 60% (3/5)
 
 ### Analyze Performance
 Comparing the results to predicting on the test set
@@ -1088,15 +1335,17 @@ plt.show()
 ```
 
 
-![png](output_51_0.png)
+![png](output_67_0.png)
 
 
-### Comparing the prediction results using test set:
-* Beware of ice/snow is similar 
-* Wild animals crossing is the same as the sample
-* Bumpy road and gravel road are the same as sample
-* No passing and maximum height allowed look very similar with sample
-* Speed limit (60km/h) is the same as the new sample
+### Comparing the performance on the new images to the accuracy results of the test set
+* sample_images/children.jpg --> Children crossing, Test Set --> Children crossing 100% match 
+* sample_images/wild_animal_crossing.jpg --> Wild animals crossing, Test Set --> Wild animals crossing 100% match 
+* sample_images/loose_gravel.jpg --> Yield, Test Set --> Yield no match, Test Set prediction correct but not a match on the new image
+* sample_images/maximum_height_allowed.jpg --> Go straight or right, Test Set --> , Test Set prediction correct but not a match on the new image
+* sample_images/60_speedlimit.jpg --> Speed limit (60km/h), Test Set --> Speed limit (60km/h)100% match
+
+The test set has an accuracy of 100% compared to the new sample image prediction accuracy of 60%. This can be attributed to overfitting on the test set. The image quality is also a determining factor on these results.
 
 ### Output Top 5 Softmax Probabilities For Each Image
 
@@ -1154,14 +1403,14 @@ display_pred_certainty(images[i], top_k_vals[i], top_k_idxs[i])
 
 
 
-![png](output_58_1.png)
+![png](output_74_1.png)
 
 
-    Beware of ice/snow: 99.17%
-    Children crossing: 0.83%
-    Road work: 0.00%
+    Children crossing: 100.00%
+    Road narrows on the right: 0.00%
     Bicycles crossing: 0.00%
-    Speed limit (20km/h): 0.00%
+    Road work: 0.00%
+    Slippery road: 0.00%
 
 
 
@@ -1174,14 +1423,14 @@ display_pred_certainty(images[i], top_k_vals[i], top_k_idxs[i])
 
 
 
-![png](output_59_1.png)
+![png](output_75_1.png)
 
 
-    Wild animals crossing: 99.53%
-    Double curve: 0.40%
-    Slippery road: 0.03%
-    Dangerous curve to the right: 0.03%
-    No passing for vehicles over 3.5 metric tons: 0.01%
+    Wild animals crossing: 100.00%
+    Dangerous curve to the right: 0.00%
+    Double curve: 0.00%
+    Road work: 0.00%
+    Dangerous curve to the left: 0.00%
 
 
 
@@ -1194,14 +1443,14 @@ display_pred_certainty(images[i], top_k_vals[i], top_k_idxs[i])
 
 
 
-![png](output_60_1.png)
+![png](output_76_1.png)
 
 
-    Bumpy road: 56.37%
-    Keep right: 16.06%
-    No passing: 10.79%
-    Bicycles crossing: 5.70%
-    Turn left ahead: 3.47%
+    Yield: 99.98%
+    No vehicles: 0.01%
+    Bicycles crossing: 0.00%
+    Bumpy road: 0.00%
+    Beware of ice/snow: 0.00%
 
 
 
@@ -1214,14 +1463,14 @@ display_pred_certainty(images[i], top_k_vals[i], top_k_idxs[i])
 
 
 
-![png](output_61_1.png)
+![png](output_77_1.png)
 
 
-    No passing: 61.25%
-    Speed limit (50km/h): 13.92%
-    Roundabout mandatory: 4.47%
-    Speed limit (30km/h): 4.05%
-    Speed limit (60km/h): 4.01%
+    Go straight or right: 76.04%
+    Go straight or left: 11.88%
+    Ahead only: 7.29%
+    Right-of-way at the next intersection: 1.60%
+    Speed limit (30km/h): 1.35%
 
 
 It looks like the No passing sign hence the confusion
@@ -1236,14 +1485,14 @@ display_pred_certainty(images[i], top_k_vals[i], top_k_idxs[i])
 
 
 
-![png](output_63_1.png)
+![png](output_79_1.png)
 
 
-    Speed limit (60km/h): 99.86%
-    Speed limit (80km/h): 0.06%
-    Dangerous curve to the right: 0.02%
-    Road work: 0.01%
-    No passing for vehicles over 3.5 metric tons: 0.01%
+    Speed limit (60km/h): 72.58%
+    Speed limit (50km/h): 26.28%
+    Speed limit (30km/h): 0.84%
+    Speed limit (80km/h): 0.30%
+    No passing: 0.00%
 
 
 ## German road sign examples from the web
@@ -1275,7 +1524,7 @@ plt.show()
 ```
 
 
-![png](output_65_0.png)
+![png](output_81_0.png)
 
 
 
@@ -1321,7 +1570,7 @@ for i in range(images.shape[0]):
     INFO:tensorflow:Restoring parameters from model.ckpt
     Predictions on sample images
     
-    sample_images_german/padestrian_crosswalk_ahead.jpg --> Road work
+    sample_images_german/padestrian_crosswalk_ahead.jpg --> Children crossing
     
     sample_images_german/speed_limit_120.jpg --> Speed limit (120km/h)
     
@@ -1329,13 +1578,13 @@ for i in range(images.shape[0]):
     
     sample_images_german/road_work.jpg --> Road work
     
-    sample_images_german/no_uturns.jpg --> General caution
+    sample_images_german/no_uturns.jpg --> No passing
     
 
 
 ### Predictions on German sample images
 
-sample_images_german/padestrian_crosswalk_ahead.jpg --> **This is the wrong prediction ** 
+sample_images_german/padestrian_crosswalk_ahead.jpg --> Children crossing **This is the correct prediction **
 
 sample_images_german/speed_limit_120.jpg --> Speed limit (120km/h) **This is the correct prediction **
 
@@ -1343,9 +1592,9 @@ sample_images_german/signal_lights_ahead.jpg --> Traffic signals **This is the c
 
 sample_images_german/road_work.jpg --> Road work **This is the correct prediction **
 
-sample_images_german/no_uturns.jpg --> General caution **This is the correct prediction **
+sample_images_german/no_uturns.jpg --> No passing **This is not the correct prediction ** There are similarities though between the No U-turns traffic sign and the No passing sign. I can understand this misclassification.
 
-Our prediction accuracy is 80% this is not inline with out model accuracy
+Our prediction accuracy is 80%. The model accuracy has improved by 20% which is quite significantly from the previous prediction. As earlier referenced the image quality has an effect on the model accuracy. It would be also intersting to visualize softmax because I could see what is causing some of the misclassification.
 
 
 ```python
@@ -1395,7 +1644,38 @@ plt.show()
 ```
 
 
-![png](output_69_0.png)
+![png](output_85_0.png)
 
 
-The prediction probabilities are quite high. I can understand why the model is getting confused about the No U Turn sign does look quite similar to the General caution sign.
+
+```python
+import seaborn as sns
+for i, image in enumerate(images):
+    fig = plt.figure(figsize=(12,4))
+    plt.xlabel(pred_certainty_str(top_k_vals[i], top_k_idxs[i]))
+    sns.barplot(x = top_k_vals[i], y = top_k_idxs[i])   
+plt.tight_layout()
+plt.show()
+```
+
+
+![png](output_86_0.png)
+
+
+
+![png](output_86_1.png)
+
+
+
+![png](output_86_2.png)
+
+
+
+![png](output_86_3.png)
+
+
+
+![png](output_86_4.png)
+
+
+The prediction probabilities are good. I can understand why the model is getting confused about the No U-Turn sign does look quite similar to the No-Passing sign and also it appears that the No U-Turn was not included in this training set hence also the misclassification.
